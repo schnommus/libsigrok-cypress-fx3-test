@@ -276,6 +276,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/conrad-digi-35-cpu/protocol.c \
 	src/hardware/conrad-digi-35-cpu/api.c
 endif
+if HW_CYPRESS_FX3_DEV_KIT
+src_libdrivers_la_SOURCES += \
+	src/hardware/cypress-fx3-dev-kit/protocol.h \
+	src/hardware/cypress-fx3-dev-kit/protocol.c \
+	src/hardware/cypress-fx3-dev-kit/api.c
+endif
 if HW_DEMO
 src_libdrivers_la_SOURCES += \
 	src/hardware/demo/protocol.h \
