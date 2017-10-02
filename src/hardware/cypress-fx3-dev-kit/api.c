@@ -18,6 +18,7 @@
  */
 
 #include <config.h>
+#include <stdlib.h>
 #include "protocol.h"
 
 static const struct fx3_profile supported_fx3[] = {
@@ -155,8 +156,6 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 
 		usb_get_port_path(devlist[i], connection_id, sizeof(connection_id));
 
-		libusb_close(hdl);
-
 		prof = NULL;
 		for (j = 0; j != sizeof(supported_fx3)/sizeof(struct fx3_profile); j++) {
 			if (des.idVendor == supported_fx3[j].vid &&
@@ -216,7 +215,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
         sdi->status = SR_ST_INACTIVE;
         sdi->inst_type = SR_INST_USB;
         sdi->conn = sr_usb_dev_inst_new(libusb_get_bus_number(devlist[i]),
-                libusb_get_device_address(devlist[i]), NULL);
+                libusb_get_device_address(devlist[i]), hdl);
 
         sr_warn("Found VID: %x.\n",des.idVendor);
 	}
@@ -228,18 +227,23 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 
 static int dev_open(struct sr_dev_inst *sdi)
 {
-	(void)sdi;
+	struct sr_dev_driver *di = sdi->driver;
+	struct sr_usb_dev_inst *usb;
+	struct dev_context *devc;
+	int ret;
 
-	/* TODO: get handle from sdi->conn and open it. */
+	devc = sdi->priv;
+	usb = sdi->conn;
 
 	return SR_OK;
 }
 
 static int dev_close(struct sr_dev_inst *sdi)
 {
-	(void)sdi;
+	struct sr_usb_dev_inst *usb;
+	usb = sdi->conn;
 
-	/* TODO: get handle from sdi->conn and close it. */
+	libusb_close(usb->devhdl);
 
 	return SR_OK;
 }
@@ -305,10 +309,64 @@ static int config_list(uint32_t key, GVariant **data,
 
 static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 {
-	/* TODO: configure hardware, reset acquisition state, set up
-	 * callbacks and send header packet. */
 
-	(void)sdi;
+	struct sr_dev_driver *di = sdi->driver;
+	struct sr_usb_dev_inst *usb;
+	struct dev_context *devc;
+
+	devc = sdi->priv;
+	usb = sdi->conn;
+
+	struct libusb_device_handle *devhdl = usb->devhdl;
+
+    if(devhdl == NULL) {
+        sr_warn("No USB device handle in dev_acquisition_start!");
+        return SR_OK;
+    }
+
+	std_session_send_df_header(sdi);
+
+    uint32_t target_length = 1024;
+    int32_t actual_length = 0;
+    size_t sample_width = 4;
+    uint8_t *data = calloc(target_length, sample_width);
+    int last_good = 0;
+
+    // HORRIBLE HACKY WAY of doing usb transfers, but it works
+    // Next step work on FW for fx3, then clean all this up.
+
+    if( libusb_bulk_transfer(devhdl,0x81,data,target_length,&actual_length,1) == 0) {
+        // Successful transfer
+        // Eat until most recent packet
+        do {
+            last_good = actual_length;
+        } while(libusb_bulk_transfer(devhdl,0x81,data,target_length,&actual_length,1)==0);
+        sr_warn("dev_acquisition_start: got %d bytes", last_good);
+
+        actual_length = last_good;
+    } else {
+        sr_warn("Transfer failed in dev_acquisition_start.");
+        actual_length = 0;
+    }
+
+    if(actual_length > 0 ) {
+        const struct sr_datafeed_logic logic = {
+            .length = actual_length,
+            .unitsize = sample_width,
+            .data = data
+        };
+
+        const struct sr_datafeed_packet packet = {
+            .type = SR_DF_LOGIC,
+            .payload = &logic
+        };
+
+        sr_session_send(sdi, &packet);
+    }
+
+	std_session_send_df_end(sdi);
+
+    free(data);
 
 	return SR_OK;
 }
