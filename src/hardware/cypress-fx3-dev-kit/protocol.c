@@ -39,3 +39,13 @@ SR_PRIV int cypress_fx3_dev_kit_receive_data(int fd, int revents, void *cb_data)
 
 	return TRUE;
 }
+
+SR_PRIV struct dev_context *fx3_dev_new(void)
+{
+	struct dev_context *devc;
+
+	devc = g_malloc0(sizeof(struct dev_context));
+	devc->profile = NULL;
+
+	return devc;
+}
